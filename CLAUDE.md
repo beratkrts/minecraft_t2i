@@ -42,14 +42,16 @@ Autoregressive text-to-image generation: given a category name (one of 345 Quick
 Two tokenizer variants are implemented as swappable modules under `tokenizer/`.
 
 #### Option A: 2×2 Patch Tokenizer (primary)
-1. **Re-bin** each pixel from 4-bit (0–15) to 2-bit (0–3): `v = pixel // 4`
+1. **Re-bin** each pixel from 4-bit (0–15) to binary (0–1): `v = pixel // 8`
 2. **Patch** the 16×16 image into an 8×8 grid of non-overlapping 2×2 blocks → 64 patches
-3. **Encode** each 2×2 patch as a single integer index (base-4, 4 digits): `idx = v0*64 + v1*16 + v2*4 + v3`
-4. **Vocabulary size**: 4^4 = **256** (all indices 0–255 are valid; no UNK needed)
+3. **Encode** each 2×2 patch as a single integer index (base-2, 4 digits): `idx = v0*8 + v1*4 + v2*2 + v3`
+4. **Vocabulary size**: 2^4 = **16** (all indices 0–15 are valid; no UNK needed)
 5. **Sequence length**: 64 tokens per image
 6. Scan order: raster (left→right, top→bottom)
 
-Inverse: `idx → (v0,v1,v2,v3)` via base-4 decomposition → map back `v*4+1` to center of bin → 16×16 image
+Rationale: Quick Draw sketches are inherently binary — intermediate gray values are resize artifacts, not real signal. Binary binning gives a 16-way classification problem vs 256-way, making greedy decoding much more reliable.
+
+Inverse: `idx → (v0,v1,v2,v3)` via base-2 decomposition → `pixel = v * 15` → 16×16 image
 
 #### Option B: Byte Pair Encoding (secondary, for comparison)
 - Flatten 16×16 = 256 pixel values (0–15 alphabet, 16 initial tokens)
@@ -69,7 +71,7 @@ Inverse: `idx → (v0,v1,v2,v3)` via base-4 decomposition → map back `v*4+1` t
 | `n_heads` | 4 (head_dim = 16) |
 | `n_layers` | 4 |
 | `d_ff` | 128 (2× d_model) |
-| `vocab_size` | 256 |
+| `vocab_size` | 16 |
 | `max_seq_len` | 65 (1 category + 64 image tokens) |
 | Activation | ReLU |
 | Positional encoding | 2D learned: `row_embed(8, d_model) + col_embed(8, d_model)` |

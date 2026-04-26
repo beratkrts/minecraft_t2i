@@ -25,6 +25,7 @@ import shutil
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 
 from model.transformer import PixelArtTransformer
@@ -113,7 +114,7 @@ def train(args):
     # Model
     model = PixelArtTransformer(
         n_categories=len(dataset.categories),
-        vocab_size=256,
+        vocab_size=16,
         d_model=64,
         n_heads=4,
         n_layers=4,
@@ -124,7 +125,13 @@ def train(args):
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=args.lr, weight_decay=0.01
     )
-    criterion = nn.CrossEntropyLoss()
+
+    # NOTE: Stroke-weighted loss — stroke patches (token != 0) are weighted
+    # args.stroke_weight x more than background patches (token == 0).
+    # Rationale: ~70-80% of patches are background; unweighted loss lets the
+    # model ignore stroke positions and still achieve low average loss.
+    # To disable, set --stroke_weight 1.
+    stroke_weight = args.stroke_weight
 
     os.makedirs(args.checkpoint_dir, exist_ok=True)
 
@@ -147,11 +154,13 @@ def train(args):
             logits = model(cat_idx, tokens)    # (B, 65, 256)
             logits = logits[:, :SEQ_LEN, :]    # (B, 64, 256) — drop last unused position
 
-            # Loss: flatten batch and sequence dims
-            loss = criterion(
-                logits.reshape(-1, model.vocab_size),  # (B*64, 256)
-                tokens.reshape(-1),                    # (B*64,)
-            )
+            # Loss: stroke-weighted cross-entropy
+            # background patch (token=0) → weight 1, stroke patch → weight stroke_weight
+            flat_logits = logits.reshape(-1, model.vocab_size)  # (B*64, 16)
+            flat_tokens = tokens.reshape(-1)                    # (B*64,)
+            per_token_loss = F.cross_entropy(flat_logits, flat_tokens, reduction='none')
+            weights = torch.where(flat_tokens == 0, 1.0, float(stroke_weight))
+            loss = (per_token_loss * weights).mean()
 
             optimizer.zero_grad()
             loss.backward()
@@ -197,6 +206,8 @@ def parse_args():
                    help="Cap images per category. Omit to use all data.")
     p.add_argument("--log_every",        type=int,   default=100)
     p.add_argument("--num_workers",      type=int,   default=4)
+    p.add_argument("--stroke_weight",    type=float, default=10.0,
+                   help="Loss weight for stroke patches (token != 0). Set to 1 to disable.")
     return p.parse_args()
 
 

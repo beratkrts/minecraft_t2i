@@ -42,7 +42,7 @@ class PixelArtTransformer(nn.Module):
     def __init__(
         self,
         n_categories: int = 345,
-        vocab_size:    int = 256,
+        vocab_size:    int = 16,
         d_model:       int = 64,
         n_heads:       int = 4,
         n_layers:      int = 4,

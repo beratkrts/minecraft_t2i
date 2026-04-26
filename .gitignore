@@ -12,7 +12,9 @@ checkpoints/
 
 # Dataset (raw + processed data, not tracked)
 quickdraw_dataset/processed/
+quickdraw_dataset/curated/
 quickdraw_dataset/*.npz
 quickdraw_dataset/*.zip
 quickdraw_dataset/tmp_npy/
 quickdraw_dataset/preview.png
+quickdraw_dataset/preview_binary.png

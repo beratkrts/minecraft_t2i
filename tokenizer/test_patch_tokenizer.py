@@ -1,4 +1,4 @@
-"""Quick sanity checks for the 2x2 patch tokenizer."""
+"""Quick sanity checks for the binary 2x2 patch tokenizer."""
 
 import numpy as np
 import sys
@@ -13,60 +13,56 @@ from tokenizer.patch_tokenizer import (
 
 
 def test_vocab_size():
-    assert VOCAB_SIZE == 256
+    assert VOCAB_SIZE == 16
     assert SEQ_LEN == 64
 
 
 def test_rebin():
-    pixels = np.array([0, 3, 4, 7, 8, 11, 12, 15], dtype=np.uint8)
-    expected = np.array([0, 0, 1, 1, 2, 2, 3, 3], dtype=np.uint8)
+    pixels = np.array([0, 7, 8, 15], dtype=np.uint8)
+    expected = np.array([0, 0, 1, 1], dtype=np.uint8)
     assert np.array_equal(rebin(pixels), expected)
 
 
 def test_patch_encode_decode_roundtrip():
-    # All-zero patch
+    # All-zero patch (all background)
     p = np.zeros((2, 2), dtype=np.uint8)
     assert encode_patch(p) == 0
     assert np.array_equal(decode_patch(0), p)
 
-    # All-ones patch (bin=3 = max)
-    p = np.full((2, 2), 3, dtype=np.uint8)
-    assert encode_patch(p) == 255
-    assert np.array_equal(decode_patch(255), p)
+    # All-ones patch (all stroke)
+    p = np.full((2, 2), 1, dtype=np.uint8)
+    assert encode_patch(p) == 15
+    assert np.array_equal(decode_patch(15), p)
 
-    # Arbitrary patch
-    p = np.array([[1, 2], [3, 0]], dtype=np.uint8)
+    # Mixed patch
+    p = np.array([[1, 0], [0, 1]], dtype=np.uint8)
     idx = encode_patch(p)
-    assert 0 <= idx < 256
+    assert 0 <= idx < 16
     assert np.array_equal(decode_patch(idx), p)
 
 
 def test_all_patch_indices_covered():
-    """Every integer 0-255 must decode to a valid patch and re-encode to the same index."""
-    for idx in range(256):
+    """Every integer 0-15 must decode to a valid patch and re-encode to the same index."""
+    for idx in range(16):
         patch = decode_patch(idx)
         assert patch.shape == (2, 2)
         assert patch.dtype == np.uint8
-        assert np.all(patch >= 0) and np.all(patch <= 3)
+        assert np.all((patch == 0) | (patch == 1))
         assert encode_patch(patch) == idx
 
 
 def test_image_encode_decode_roundtrip():
-    """Encode then decode should recover the re-binned image (not original 4-bit)."""
     rng = np.random.default_rng(42)
     image = rng.integers(0, 16, size=(16, 16), dtype=np.uint8)
 
     tokens = encode(image)
     assert tokens.shape == (64,)
     assert tokens.dtype == np.int32
-    assert np.all(tokens >= 0) and np.all(tokens < 256)
+    assert np.all(tokens >= 0) and np.all(tokens < 16)
 
     reconstructed = decode(tokens)
     assert reconstructed.shape == (16, 16)
-
-    # Reconstructed values are 2-bit bins (0-3), not original pixels
-    expected_binned = rebin(image)
-    assert np.array_equal(reconstructed, expected_binned)
+    assert np.array_equal(reconstructed, rebin(image))
 
 
 def test_all_white_image():
@@ -79,8 +75,17 @@ def test_all_white_image():
 def test_all_black_image():
     image = np.full((16, 16), 15, dtype=np.uint8)
     tokens = encode(image)
-    assert np.all(tokens == 255)
-    assert np.array_equal(decode(tokens), np.full((16, 16), 3, dtype=np.uint8))
+    assert np.all(tokens == 15)
+    assert np.array_equal(decode(tokens), np.ones((16, 16), dtype=np.uint8))
+
+
+def test_bins_to_pixels():
+    binned = np.array([[0, 1], [1, 0]], dtype=np.uint8)
+    pixels = bins_to_pixels(binned)
+    assert pixels[0, 0] == 0
+    assert pixels[0, 1] == 15
+    assert pixels[1, 0] == 15
+    assert pixels[1, 1] == 0
 
 
 def test_batch_encode_decode():
@@ -94,12 +99,10 @@ def test_batch_encode_decode():
 
 
 def test_token_order_is_raster():
-    """Top-left patch should be token 0, bottom-right should be token 63."""
     image = np.zeros((16, 16), dtype=np.uint8)
-    # Set only the top-left 2x2 patch to value 15 (bin 3)
-    image[0:2, 0:2] = 15
+    image[0:2, 0:2] = 15   # top-left patch all stroke
     tokens = encode(image)
-    assert tokens[0] == 255   # top-left patch: all 3s = 3*64+3*16+3*4+3 = 255
+    assert tokens[0] == 15  # all-ones patch = 1*8+1*4+1*2+1 = 15
     assert np.all(tokens[1:] == 0)
 
 
@@ -112,6 +115,7 @@ if __name__ == '__main__':
         test_image_encode_decode_roundtrip,
         test_all_white_image,
         test_all_black_image,
+        test_bins_to_pixels,
         test_batch_encode_decode,
         test_token_order_is_raster,
     ]

@@ -12,7 +12,7 @@ model = PixelArtTransformer(n_categories=len(categories))
 model.load_state_dict(ckpt["model"])
 model.eval()
 
-NAMES = ["cat", "dog", "airplane"]
+NAMES = ["cat", "dog", "airplane", "apple", "alarm clock"]
 indices = [categories.index(n) for n in NAMES]
 
 
